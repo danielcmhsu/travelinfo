@@ -1,0 +1,6 @@
+{
+  "name": "Group Trip Guide",
+  "description": "A responsive, customizable group travel website containing trip details, countdowns, accommodation specs, daily itinerary schedules, food guidelines, embedded My Maps, and interactive luggage checklists.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
