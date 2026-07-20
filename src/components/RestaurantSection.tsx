@@ -1,26 +1,61 @@
 import { useState, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Utensils, MapPin, Plus, Trash2, Heart, ExternalLink } from 'lucide-react';
+import { Utensils, MapPin, Plus, Trash2, Heart, ExternalLink, Calendar } from 'lucide-react';
 import { RestaurantInfo } from '../types';
 
 interface RestaurantSectionProps {
   restaurants: RestaurantInfo[];
   isEditing: boolean;
   onUpdateRestaurants: (updatedRestaurants: RestaurantInfo[]) => void;
+  days: { dayNumber: number; date: string; region?: string }[];
 }
 
-export default function RestaurantSection({ restaurants, isEditing, onUpdateRestaurants }: RestaurantSectionProps) {
+type DayFilter = number | 'all' | 'none';
+
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+const formatDate = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  const wd = WEEKDAYS[new Date(y, m - 1, d).getDay()];
+  return `${m}/${d}(${wd})`;
+};
+
+// MM/DD（不含星期）供標籤下半行顯示
+const formatShortDate = (iso: string) => {
+  const [, m, d] = iso.split('-').map(Number);
+  return m && d ? `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}` : iso;
+};
+
+const todayIso = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
+// 依當天日期決定預設篩選的日期；不在行程期間則回到「全部」
+const getTodayDayFilter = (days: { dayNumber: number; date: string; region?: string }[]): DayFilter => {
+  const today = todayIso();
+  const match = days.find(d => d.date === today);
+  return match ? match.dayNumber : 'all';
+};
+
+export default function RestaurantSection({ restaurants, isEditing, onUpdateRestaurants, days }: RestaurantSectionProps) {
   const [editingRestId, setEditingRestId] = useState<string | null>(null);
+  const [dayFilter, setDayFilter] = useState<DayFilter>(() => getTodayDayFilter(days));
 
   // New Restaurant State Form
   const [newRestName, setNewRestName] = useState('');
+  const [newRestDay, setNewRestDay] = useState<number | ''>('');
   const [newRestCuisine, setNewRestCuisine] = useState('');
   const [newRestPriceRange, setNewRestPriceRange] = useState<'low' | 'medium' | 'high'>('medium');
   const [newRestRecommended, setNewRestRecommended] = useState('');
-  const [newRestAddress, setNewRestAddress] = useState('');
   const [newRestMapsUrl, setNewRestMapsUrl] = useState('');
+  const [newRestWebsite, setNewRestWebsite] = useState('');
   const [newRestImageUrl, setNewRestImageUrl] = useState('');
   const [newRestNotes, setNewRestNotes] = useState('');
+
+  const dayInfo = new Map(days.map(d => [d.dayNumber, d]));
+  const dayToDate = new Map(days.map(d => [d.dayNumber, d.date]));
+  const today = todayIso();
 
   const handleUpdateField = (id: string, key: keyof RestaurantInfo, value: any) => {
     const updated = restaurants.map(rest => {
@@ -43,13 +78,14 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
 
     const newRest: RestaurantInfo = {
       id: `rest-${Date.now()}`,
+      day: newRestDay === '' ? undefined : newRestDay,
       name: newRestName,
-      cuisine: newRestCuisine || '日式料理',
+      cuisine: newRestCuisine || '推薦',
       priceRange: newRestPriceRange,
-      recommendedDishes: dishes.length > 0 ? dishes : ['招牌推薦'],
-      address: newRestAddress,
+      recommendedDishes: dishes.length > 0 ? dishes : ['推薦亮點'],
       googleMapsUrl: newRestMapsUrl || undefined,
-      imageUrl: newRestImageUrl || 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+      website: newRestWebsite || undefined,
+      imageUrl: newRestImageUrl || '',
       notes: newRestNotes
     };
 
@@ -57,11 +93,12 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
 
     // Reset Form
     setNewRestName('');
+    setNewRestDay('');
     setNewRestCuisine('');
     setNewRestPriceRange('medium');
     setNewRestRecommended('');
-    setNewRestAddress('');
     setNewRestMapsUrl('');
+    setNewRestWebsite('');
     setNewRestImageUrl('');
     setNewRestNotes('');
   };
@@ -78,6 +115,42 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
     }
   };
 
+  // Build date filter chips: 全部 → 每個有項目的日期 → 其他 (未指定)
+  const presentDays = Array.from(
+    new Set(restaurants.map(r => r.day).filter((d): d is number => !!d))
+  ).sort((a, b) => a - b);
+  const hasUndated = restaurants.some(r => !r.day);
+
+  const dayChips: { key: DayFilter; label?: string; dayNumber?: number }[] = [
+    { key: 'all', label: '全部' },
+    ...presentDays.map(d => ({ key: d as DayFilter, dayNumber: d })),
+    ...(hasUndated ? [{ key: 'none' as DayFilter, label: '其他' }] : []),
+  ];
+
+  const visibleRestaurants = restaurants.filter(rest =>
+    dayFilter === 'all' ? true : dayFilter === 'none' ? !rest.day : rest.day === dayFilter
+  );
+
+  // 兩行式標籤：上排 DAY N（當天顯示 TODAY），下排 MM/DD 地區
+  const renderChipContent = (chip: { key: DayFilter; label?: string; dayNumber?: number }) => {
+    if (chip.dayNumber == null) {
+      return <span className="block px-1">{chip.label}</span>;
+    }
+    const info = dayInfo.get(chip.dayNumber);
+    const isToday = info?.date === today;
+    const bottom = info
+      ? `${formatShortDate(info.date)}${info.region ? ` ${info.region}` : ''}`
+      : `D${chip.dayNumber}`;
+    return (
+      <>
+        <span className="block text-[10px] opacity-75 uppercase tracking-wider">
+          {isToday ? 'TODAY' : `DAY ${chip.dayNumber}`}
+        </span>
+        <span className="block text-xs mt-0.5">{bottom}</span>
+      </>
+    );
+  };
+
   return (
     <section id="restaurant-section" className="space-y-6">
       <div className="border-b border-black/5 pb-5">
@@ -86,72 +159,116 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
             <Utensils className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] font-display">必吃美食與特色餐廳</h2>
-            <p className="text-xs sm:text-sm text-[#717171]">東京不可錯過的口袋美食名單，已為您標記好必點菜色與預算</p>
+            <h2 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] font-display">必吃必買</h2>
+            <p className="text-xs sm:text-sm text-[#717171]">東北不可錯過的美食與伴手禮清單，可依日期切換查看當天的口袋名單</p>
           </div>
         </div>
       </div>
 
-      {/* Grid of Restaurants */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <AnimatePresence mode="popLayout">
-          {restaurants.map((rest, index) => {
+      {/* Date filter chips */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none">
+        {dayChips.map(f => (
+          <button
+            key={String(f.key)}
+            onClick={() => setDayFilter(f.key)}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 text-center ${
+              dayFilter === f.key
+                ? 'bg-red-50 text-red-500 border border-red-100/60 font-bold shadow-sm'
+                : 'text-[#717171] hover:text-[#1A1A1A] hover:bg-black/5'
+            }`}
+          >
+            {renderChipContent(f)}
+          </button>
+        ))}
+      </div>
+
+      {/* Grid of Restaurants — 整組卡片一起淡入淡出，避免逐張進退場造成的重疊閃爍 */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={String(dayFilter)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
+          {visibleRestaurants.map((rest) => {
             const priceBadge = getPriceBadge(rest.priceRange);
             const isRestEditing = editingRestId === rest.id;
+            const hasImage = !!rest.imageUrl;
+            const dateLabel = rest.day && dayToDate.has(rest.day) ? formatDate(dayToDate.get(rest.day)!) : null;
+
+            const badges = (
+              <div className="flex gap-1.5 flex-wrap">
+                {dateLabel && (
+                  <span className="bg-white text-[#1A1A1A] text-[10px] font-bold px-2 py-1 rounded-md border border-black/10 inline-flex items-center gap-1 shadow-sm">
+                    <Calendar className="w-3 h-3 text-red-500" />
+                    {dateLabel}
+                  </span>
+                )}
+                <span className="bg-[#1A1A1A] text-white text-[10px] font-semibold px-2 py-1 rounded-md">
+                  {rest.cuisine}
+                </span>
+                <span className={`text-[10px] font-semibold px-2 py-1 rounded-md border ${priceBadge.style}`}>
+                  {priceBadge.text}
+                </span>
+              </div>
+            );
+
+            const adminActions = isEditing && (
+              <div className="flex gap-1.5 shrink-0">
+                <button
+                  onClick={() => setEditingRestId(isRestEditing ? null : rest.id)}
+                  className="bg-[#1A1A1A] text-[#FAF9F6] hover:bg-black/80 text-xs font-semibold px-2.5 py-1 rounded-md cursor-pointer"
+                >
+                  {isRestEditing ? '完成' : '編輯'}
+                </button>
+                <button
+                  onClick={() => handleDeleteRestaurant(rest.id)}
+                  className="bg-red-500 text-white hover:bg-red-600 p-1.5 rounded-md cursor-pointer shadow-sm"
+                  title="刪除"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
 
             return (
-              <motion.div
+              <div
                 key={rest.id}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.3, delay: index * 0.05 }}
                 className="bg-white rounded-2xl border border-black/5 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
               >
                 <div>
-                  {/* Photo Banner with Badges */}
-                  <div className="relative aspect-video bg-black/5 border-b border-black/5">
-                    <img
-                      src={rest.imageUrl}
-                      alt={rest.name}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
-                      <span className="bg-[#1A1A1A] text-white text-[10px] font-semibold px-2 py-1 rounded-md">
-                        {rest.cuisine}
-                      </span>
-                      <span className={`text-[10px] font-semibold px-2 py-1 rounded-md border ${priceBadge.style}`}>
-                        {priceBadge.text}
-                      </span>
-                    </div>
-
-                    {/* Admin Actions overlay */}
-                    {isEditing && (
-                      <div className="absolute top-3 right-3 flex gap-1.5">
-                        <button
-                          onClick={() => setEditingRestId(isRestEditing ? null : rest.id)}
-                          className="bg-[#1A1A1A] text-[#FAF9F6] hover:bg-black/80 text-xs font-semibold px-2.5 py-1 rounded-md cursor-pointer"
-                        >
-                          {isRestEditing ? '完成' : '編輯'}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteRestaurant(rest.id)}
-                          className="bg-red-500 text-white hover:bg-red-600 p-1.5 rounded-md cursor-pointer shadow-sm"
-                          title="刪除餐廳"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                  {hasImage ? (
+                    /* Photo Banner with Badges */
+                    <div className="relative aspect-video bg-black/5 border-b border-black/5">
+                      <img
+                        src={rest.imageUrl}
+                        alt={rest.name}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute top-3 left-3">
+                        {badges}
                       </div>
-                    )}
-                  </div>
+                      {adminActions && (
+                        <div className="absolute top-3 right-3">{adminActions}</div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Compact header (no image) */
+                    <div className="flex items-start justify-between gap-2 px-5 pt-5">
+                      {badges}
+                      {adminActions}
+                    </div>
+                  )}
 
                   {/* Body Content */}
-                  <div className="p-5 space-y-4">
+                  <div className={hasImage ? 'p-5 space-y-4' : 'px-5 pt-3 pb-5 space-y-4'}>
                     {isRestEditing ? (
                       <div className="space-y-2">
                         <div>
-                          <label className="block text-[10px] font-bold text-[#717171] uppercase">餐廳名稱：</label>
+                          <label className="block text-[10px] font-bold text-[#717171] uppercase">名稱：</label>
                           <input
                             id={`edit-rest-name-${rest.id}`}
                             type="text"
@@ -162,14 +279,18 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="block text-[10px] font-bold text-[#717171] uppercase">料理類型：</label>
-                            <input
-                              id={`edit-rest-cuisine-${rest.id}`}
-                              type="text"
-                              value={rest.cuisine}
-                              onChange={(e) => handleUpdateField(rest.id, 'cuisine', e.target.value)}
+                            <label className="block text-[10px] font-bold text-[#717171] uppercase">對應日期：</label>
+                            <select
+                              id={`edit-rest-day-${rest.id}`}
+                              value={rest.day ?? ''}
+                              onChange={(e) => handleUpdateField(rest.id, 'day', e.target.value === '' ? undefined : Number(e.target.value))}
                               className="w-full border border-black/15 rounded px-2 py-1 text-xs focus:outline-none focus:border-black text-[#1A1A1A]"
-                            />
+                            >
+                              <option value="">未指定（其他）</option>
+                              {days.map(d => (
+                                <option key={d.dayNumber} value={d.dayNumber}>{formatDate(d.date)}</option>
+                              ))}
+                            </select>
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold text-[#717171] uppercase">價格等級：</label>
@@ -186,7 +307,17 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
                           </div>
                         </div>
                         <div>
-                          <label className="block text-[10px] font-bold text-[#717171] uppercase">圖片網址：</label>
+                          <label className="block text-[10px] font-bold text-[#717171] uppercase">類型 / 風格：</label>
+                          <input
+                            id={`edit-rest-cuisine-${rest.id}`}
+                            type="text"
+                            value={rest.cuisine}
+                            onChange={(e) => handleUpdateField(rest.id, 'cuisine', e.target.value)}
+                            className="w-full border border-black/15 rounded px-2 py-1 text-xs focus:outline-none focus:border-black text-[#1A1A1A]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-[#717171] uppercase">圖片網址（選填）：</label>
                           <input
                             id={`edit-rest-img-${rest.id}`}
                             type="text"
@@ -204,10 +335,10 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
                       </div>
                     )}
 
-                    {/* Recommended Dishes Pills */}
+                    {/* Recommended highlights */}
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-bold text-[#717171] tracking-widest uppercase flex items-center gap-1.5">
-                        <Heart className="w-3 h-3 text-red-500 fill-red-500" /> 主打必點招牌菜色
+                        <Heart className="w-3 h-3 text-red-500 fill-red-500" /> 推薦亮點
                       </p>
                       {isRestEditing ? (
                         <input
@@ -216,7 +347,7 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
                           value={rest.recommendedDishes.join(', ')}
                           onChange={(e) => handleUpdateField(rest.id, 'recommendedDishes', e.target.value.split(',').map(d => d.trim()))}
                           className="w-full border border-black/15 rounded px-2 py-1 text-xs focus:outline-none focus:border-black text-[#1A1A1A]"
-                          placeholder="用逗號分隔菜色"
+                          placeholder="用逗號分隔（菜色 / 必買品項）"
                         />
                       ) : (
                         <div className="flex flex-wrap gap-1">
@@ -232,110 +363,135 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
                       )}
                     </div>
 
-                    {/* Restaurant Notes */}
+                    {/* Notes */}
                     <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-[#717171] tracking-widest uppercase">吃貨筆記 / 評論</p>
+                      <p className="text-[10px] font-bold text-[#717171] tracking-widest uppercase">筆記 / 備註</p>
                       {isRestEditing ? (
                         <textarea
                           id={`edit-rest-notes-${rest.id}`}
                           value={rest.notes}
                           onChange={(e) => handleUpdateField(rest.id, 'notes', e.target.value)}
                           className="w-full border border-black/15 rounded p-2 text-xs focus:outline-none focus:border-black text-[#1A1A1A] min-h-[60px]"
-                          placeholder="輸入推薦理由或用餐細節"
+                          placeholder="輸入推薦理由、必買重點或用餐細節"
                         />
                       ) : (
                         <p className="text-sm text-[#717171] leading-relaxed font-normal whitespace-pre-line bg-[#FAF9F6] p-3 rounded-xl border border-black/5">
-                          {rest.notes || "暫無評論筆記。"}
+                          {rest.notes || '暫無備註。'}
                         </p>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Footer address and button */}
-                <div className="px-5 pb-5 pt-2 border-t border-black/5 flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-1.5 text-[#717171] min-w-0">
-                    <MapPin className="w-4 h-4 text-[#717171] shrink-0" />
-                    {isRestEditing ? (
-                      <input
-                        id={`edit-rest-addr-${rest.id}`}
-                        type="text"
-                        value={rest.address}
-                        onChange={(e) => handleUpdateField(rest.id, 'address', e.target.value)}
-                        className="w-full border border-black/15 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-black text-[#1A1A1A]"
-                        placeholder="餐廳地址"
-                      />
-                    ) : (
-                      <span className="truncate">{rest.address}</span>
+                {/* Footer links */}
+                {(isRestEditing || rest.website || rest.googleMapsUrl) && (
+                  <div className={`px-5 pb-5 pt-2 border-t border-black/5 gap-3 text-xs ${isRestEditing ? 'flex flex-col' : 'flex items-center justify-end'}`}>
+                    {!isRestEditing && (
+                      <div className="flex items-center gap-3 shrink-0">
+                        {rest.website && (
+                          <a
+                            href={rest.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-red-500 hover:text-red-600 font-semibold inline-flex items-center gap-0.5 hover:underline whitespace-nowrap"
+                          >
+                            官方網站 <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                        {rest.googleMapsUrl && (
+                          <a
+                            href={rest.googleMapsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-red-500 hover:text-red-600 font-semibold inline-flex items-center gap-0.5 hover:underline whitespace-nowrap"
+                          >
+                            <MapPin className="w-3.5 h-3.5" /> 地圖導航
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {isRestEditing && (
+                      <div className="w-full space-y-2">
+                        <div>
+                          <label className="block text-[10px] text-[#717171] mb-0.5">地圖 URL：</label>
+                          <input
+                            id={`edit-rest-maps-${rest.id}`}
+                            type="text"
+                            value={rest.googleMapsUrl || ''}
+                            onChange={(e) => handleUpdateField(rest.id, 'googleMapsUrl', e.target.value)}
+                            className="w-full border border-black/15 rounded px-2 py-1 text-xs focus:outline-none focus:border-black text-[#1A1A1A]"
+                            placeholder="https://maps.google.com/?q=..."
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-[#717171] mb-0.5">官方網站：</label>
+                          <input
+                            id={`edit-rest-web-${rest.id}`}
+                            type="text"
+                            value={rest.website || ''}
+                            onChange={(e) => handleUpdateField(rest.id, 'website', e.target.value)}
+                            className="w-full border border-black/15 rounded px-2 py-1 text-xs focus:outline-none focus:border-black text-[#1A1A1A]"
+                            placeholder="https://..."
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
-                  {!isRestEditing && rest.googleMapsUrl && (
-                    <a
-                      href={rest.googleMapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-red-500 hover:text-red-600 font-semibold inline-flex items-center gap-0.5 hover:underline whitespace-nowrap shrink-0"
-                    >
-                      地圖導航 <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                  {isRestEditing && (
-                    <div>
-                      <label className="block text-[10px] text-[#717171]">地圖 URL：</label>
-                      <input
-                        id={`edit-rest-maps-${rest.id}`}
-                        type="text"
-                        value={rest.googleMapsUrl || ''}
-                        onChange={(e) => handleUpdateField(rest.id, 'googleMapsUrl', e.target.value)}
-                        className="border border-black/15 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-black text-[#1A1A1A] w-28"
-                        placeholder="地圖 URL"
-                      />
-                    </div>
-                  )}
-                </div>
-              </motion.div>
+                )}
+              </div>
             );
           })}
-        </AnimatePresence>
 
-        {/* Add New Restaurant Form Button card */}
+        {/* Add New Form Button card */}
         {isEditing && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
+          <div
             className="bg-white rounded-2xl border border-dashed border-black/15 p-6 flex flex-col justify-between shadow-sm"
           >
             <h3 className="text-xs font-bold text-[#1A1A1A] uppercase tracking-widest mb-4 flex items-center gap-1.5">
-              <Plus className="w-4 h-4 text-[#1A1A1A]" /> 新增特色餐廳推薦
+              <Plus className="w-4 h-4 text-[#1A1A1A]" /> 新增必吃必買地點
             </h3>
             <form onSubmit={handleAddRestaurant} className="space-y-3 text-xs text-[#717171]">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold mb-1 text-xs">餐廳名稱：</label>
+                  <label className="block font-semibold mb-1 text-xs">名稱：</label>
                   <input
                     id="form-rest-name"
                     type="text"
                     value={newRestName}
                     onChange={(e) => setNewRestName(e.target.value)}
-                    placeholder="e.g., 敘敘苑 晴空塔店"
+                    placeholder="e.g., 萩之月 / 敘敘苑"
                     className="w-full bg-white border border-black/15 rounded p-1.5 focus:outline-none focus:border-black text-[#1A1A1A]"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1 text-xs">料理風格：</label>
+                  <label className="block font-semibold mb-1 text-xs">對應日期：</label>
+                  <select
+                    id="form-rest-day"
+                    value={newRestDay}
+                    onChange={(e) => setNewRestDay(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-black/15 rounded p-1.5 focus:outline-none focus:border-black text-[#1A1A1A]"
+                  >
+                    <option value="">未指定（其他）</option>
+                    {days.map(d => (
+                      <option key={d.dayNumber} value={d.dayNumber}>{formatDate(d.date)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold mb-1 text-xs">類型 / 風格：</label>
                   <input
                     id="form-rest-cuisine"
                     type="text"
                     value={newRestCuisine}
                     onChange={(e) => setNewRestCuisine(e.target.value)}
-                    placeholder="e.g., 日式燒肉 / 壽喜燒"
+                    placeholder="e.g., 燒肉 / 伴手禮 / 藥妝"
                     className="w-full bg-white border border-black/15 rounded p-1.5 focus:outline-none focus:border-black text-[#1A1A1A]"
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-semibold mb-1 text-xs">價格定位：</label>
                   <select
@@ -346,30 +502,19 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
                   >
                     <option value="low">平價 $</option>
                     <option value="medium">中高檔 $$</option>
-                    <option value="high">豪華美食 $$$</option>
+                    <option value="high">豪華 $$$</option>
                   </select>
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1 text-xs">精選推薦菜色 (英文逗號分隔)：</label>
-                  <input
-                    id="form-rest-rec"
-                    type="text"
-                    value={newRestRecommended}
-                    onChange={(e) => setNewRestRecommended(e.target.value)}
-                    placeholder="牛舌, 五花肉, 石鍋拌飯"
-                    className="w-full bg-white border border-black/15 rounded p-1.5 focus:outline-none focus:border-black text-[#1A1A1A]"
-                  />
                 </div>
               </div>
 
               <div>
-                <label className="block font-semibold mb-1 text-xs">餐廳地址：</label>
+                <label className="block font-semibold mb-1 text-xs">推薦亮點 (英文逗號分隔)：</label>
                 <input
-                  id="form-rest-addr"
+                  id="form-rest-rec"
                   type="text"
-                  value={newRestAddress}
-                  onChange={(e) => setNewRestAddress(e.target.value)}
-                  placeholder="e.g., 東京都中央區..."
+                  value={newRestRecommended}
+                  onChange={(e) => setNewRestRecommended(e.target.value)}
+                  placeholder="牛舌, 毛豆泥麻糬, 蘋果派"
                   className="w-full bg-white border border-black/15 rounded p-1.5 focus:outline-none focus:border-black text-[#1A1A1A]"
                 />
               </div>
@@ -387,7 +532,19 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
               </div>
 
               <div>
-                <label className="block font-semibold mb-1 text-xs">美食照片網址 (選填)：</label>
+                <label className="block font-semibold mb-1 text-xs">官方網站 (選填)：</label>
+                <input
+                  id="form-rest-web"
+                  type="text"
+                  value={newRestWebsite}
+                  onChange={(e) => setNewRestWebsite(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full bg-white border border-black/15 rounded p-1.5 focus:outline-none focus:border-black text-[#1A1A1A]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1 text-xs">照片網址 (選填，留空用精簡卡)：</label>
                 <input
                   id="form-rest-img"
                   type="text"
@@ -399,12 +556,12 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
               </div>
 
               <div>
-                <label className="block font-semibold mb-1 text-xs">吃貨評論與備註：</label>
+                <label className="block font-semibold mb-1 text-xs">筆記與備註：</label>
                 <textarea
                   id="form-rest-notes"
                   value={newRestNotes}
                   onChange={(e) => setNewRestNotes(e.target.value)}
-                  placeholder="在此輸入包廂資訊、預訂技巧、必點心得..."
+                  placeholder="在此輸入必買重點、預訂技巧、必點心得..."
                   className="w-full bg-white border border-black/15 rounded p-1.5 focus:outline-none focus:border-black text-[#1A1A1A] min-h-[60px]"
                 />
               </div>
@@ -413,12 +570,13 @@ export default function RestaurantSection({ restaurants, isEditing, onUpdateRest
                 type="submit"
                 className="w-full py-2 bg-[#1A1A1A] hover:bg-black/80 text-white font-semibold rounded-lg text-sm transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1"
               >
-                <Plus className="w-4 h-4" /> 新增這家餐廳
+                <Plus className="w-4 h-4" /> 新增這個地點
               </button>
             </form>
-          </motion.div>
+          </div>
         )}
-      </div>
+        </motion.div>
+      </AnimatePresence>
     </section>
   );
 }

@@ -126,7 +126,7 @@ export default function Header({ tripData, isEditing, onUpdateHeader }: HeaderPr
 
           {/* Simple Participants Indicator (Top-Right) */}
           <div className="flex flex-col items-start md:items-end gap-1.5 shrink-0 border-t md:border-t-0 border-black/5 pt-4 md:pt-0">
-            <span className="text-[10px] uppercase tracking-widest text-[#717171] font-semibold">PARTICIPANTS</span>
+            <span className="text-[10px] uppercase tracking-widest text-[#717171] font-semibold">TOUR LEADER</span>
             <div className="flex -space-x-2">
               {tripData.groupMembers.map((member, index) => (
                 <img
@@ -197,7 +197,7 @@ export default function Header({ tripData, isEditing, onUpdateHeader }: HeaderPr
           >
             <div>
               <h3 className="text-xs font-bold tracking-widest text-[#1A1A1A] uppercase mb-4 flex items-center gap-1.5">
-                <User className="w-4 h-4" /> 參與團員與職責
+                <User className="w-4 h-4" /> 領隊聯絡資訊
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 {tripData.groupMembers.map((member, index) => (

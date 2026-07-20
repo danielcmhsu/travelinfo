@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Map, HelpCircle, ExternalLink, Compass, Navigation, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Map, HelpCircle, ExternalLink, Compass, Navigation, Info, ChevronDown, ChevronUp, LocateFixed } from 'lucide-react';
 import { TripInfo } from '../types';
 
 interface MapSectionProps {
@@ -34,6 +34,38 @@ export default function MapSection({ tripData, isEditing, onUpdateMapUrl }: MapS
       }
     }
     onUpdateMapUrl(cleanUrl);
+  };
+
+  // 使用者目前位置（按下「定位」後取得），用來把景點連結改成「從你的位置導航過去」
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+
+  const handleLocate = () => {
+    if (!('geolocation' in navigator)) {
+      setGeoStatus('error');
+      return;
+    }
+    setGeoStatus('loading');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGeoStatus('idle');
+      },
+      () => setGeoStatus('error'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // 從景點連結（?q=地名）或 location 文字取出目的地，組成 Google Maps 路線連結
+  const buildDirectionsUrl = (wp: { googleMapsUrl?: string; location: string; title: string }) => {
+    let dest = '';
+    if (wp.googleMapsUrl) {
+      const m = wp.googleMapsUrl.match(/[?&]q=([^&]+)/);
+      if (m) dest = decodeURIComponent(m[1].replace(/\+/g, ' '));
+    }
+    if (!dest) dest = wp.location || wp.title;
+    const origin = userCoords ? `${userCoords.lat},${userCoords.lng}` : '';
+    return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}`;
   };
 
   return (
@@ -134,10 +166,30 @@ export default function MapSection({ tripData, isEditing, onUpdateMapUrl }: MapS
         {/* Waypoints Navigation list */}
         <div className="lg:col-span-4 bg-[#FAF9F6] border border-black/5 rounded-xl p-4 flex flex-col justify-between">
           <div className="space-y-3 flex-1 overflow-y-auto max-h-[330px] sm:max-h-[360px] pr-1 scrollbar-thin">
-            <h3 className="text-xs font-bold text-[#1A1A1A] uppercase tracking-widest mb-2 flex items-center gap-1.5">
-              <Navigation className="w-4.5 h-4.5 text-red-500" /> 行程景點清單 ({waypoints.length})
-            </h3>
-            
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <h3 className="text-xs font-bold text-[#1A1A1A] uppercase tracking-widest flex items-center gap-1.5">
+                <Navigation className="w-4.5 h-4.5 text-red-500" /> 行程景點清單 ({waypoints.length})
+              </h3>
+              <button
+                onClick={handleLocate}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer shrink-0 ${
+                  userCoords
+                    ? 'bg-red-500 text-white border-red-500'
+                    : 'bg-white text-[#1A1A1A] border-black/10 hover:border-black/30'
+                }`}
+                title="取得你目前位置，景點導航將從你的位置出發"
+              >
+                <LocateFixed className={`w-3.5 h-3.5 ${geoStatus === 'loading' ? 'animate-pulse' : ''} ${userCoords ? '' : 'text-red-500'}`} />
+                {geoStatus === 'loading' ? '定位中…' : userCoords ? '已定位' : '定位'}
+              </button>
+            </div>
+            {geoStatus === 'error' && (
+              <p className="text-[10px] text-red-500 font-medium -mt-1">無法取得位置，請確認已允許瀏覽器定位權限。</p>
+            )}
+            {userCoords && (
+              <p className="text-[10px] text-[#2D5A27] font-medium -mt-1">已定位 · 點景點的導航圖示即可從你的位置出發規劃路線。</p>
+            )}
+
             <div className="space-y-2">
               {waypoints.length === 0 ? (
                 <div className="py-8 text-center text-xs text-[#717171]">
@@ -145,8 +197,8 @@ export default function MapSection({ tripData, isEditing, onUpdateMapUrl }: MapS
                 </div>
               ) : (
                 waypoints.map((wp, index) => (
-                  <div 
-                    key={index} 
+                  <div
+                    key={index}
                     className="flex items-start justify-between gap-3 p-2.5 rounded-lg bg-white border border-black/5 hover:border-black/15 transition-colors"
                   >
                     <div className="space-y-0.5 min-w-0">
@@ -159,15 +211,15 @@ export default function MapSection({ tripData, isEditing, onUpdateMapUrl }: MapS
                       <p className="text-[10px] text-[#717171] truncate">{wp.location}</p>
                     </div>
 
-                    {wp.googleMapsUrl && (
+                    {(wp.googleMapsUrl || userCoords) && (
                       <a
-                        href={wp.googleMapsUrl}
+                        href={userCoords ? buildDirectionsUrl(wp) : wp.googleMapsUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-1.5 rounded-md hover:bg-black/5 text-red-500 hover:text-red-600 transition-colors shrink-0"
-                        title={`前往 ${wp.title} 的導航`}
+                        title={userCoords ? `從你的位置導航到 ${wp.title}` : `前往 ${wp.title} 的導航`}
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
+                        {userCoords ? <Navigation className="w-3.5 h-3.5" /> : <ExternalLink className="w-3.5 h-3.5" />}
                       </a>
                     )}
                   </div>
@@ -177,7 +229,7 @@ export default function MapSection({ tripData, isEditing, onUpdateMapUrl }: MapS
           </div>
 
           <div className="border-t border-black/5 pt-3 mt-3 text-[10px] text-[#717171] font-normal leading-relaxed">
-            💡 參與者可點擊右側的<b>「外連地圖導航 ↗」</b>圖示，出遊時直接使用手機 Google Maps 進一步開啟即時語音導航及路況查詢。
+            💡 出遊時先按上方<b>「定位」</b>允許取用位置，再點各景點的<b>導航圖示</b>，即可用手機 Google Maps 從你目前的位置直接規劃前往該點的路線與距離。
           </div>
         </div>
       </div>

@@ -21,8 +21,16 @@ const CATEGORY_MAP: Record<ActivityCategory, { icon: any; color: string; bg: str
   leisure: { icon: Sparkles, color: 'text-[#853030]', bg: 'bg-[#FAF0F0]', border: 'border-[#F2D7D7]', label: '休閒放鬆' }
 };
 
+// 依當天日期決定預設要展開哪一天；不在行程期間則回到第一天
+const getTodayDayIndex = (itinerary: ItineraryDay[]) => {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const idx = itinerary.findIndex(day => day.date === today);
+  return idx >= 0 ? idx : 0;
+};
+
 export default function ItinerarySection({ itinerary, isEditing, onUpdateItinerary }: ItinerarySectionProps) {
-  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(() => getTodayDayIndex(itinerary));
   const [categoryFilter, setCategoryFilter] = useState<ActivityCategory | 'all'>('all');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 

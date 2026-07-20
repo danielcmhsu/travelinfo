@@ -18,6 +18,10 @@ import { TripInfo, HotelInfo, ItineraryDay, PackingItem, RestaurantInfo } from '
 
 const STORAGE_KEY = 'group_trip_planner_data';
 
+// 依當天主題推導出簡短地區名，供必吃必買篩選標籤使用（與飯店標籤一致）
+const REGION_KEYWORDS = ['仙台', '松島', '雫石', '十和田', '弘前', '青森'];
+const deriveRegion = (theme: string) => REGION_KEYWORDS.find(k => theme.includes(k)) || '';
+
 export default function App() {
   const [tripData, setTripData] = useState<TripInfo>(defaultTripData);
   const [isEditing, setIsEditing] = useState(false);
@@ -302,10 +306,11 @@ export default function App() {
 
         {/* 3. Restaurant Grid Section */}
         <div id="restaurant-section" className="scroll-mt-24">
-          <RestaurantSection 
-            restaurants={tripData.restaurants} 
-            isEditing={isEditing} 
-            onUpdateRestaurants={handleUpdateRestaurants} 
+          <RestaurantSection
+            restaurants={tripData.restaurants}
+            isEditing={isEditing}
+            onUpdateRestaurants={handleUpdateRestaurants}
+            days={tripData.itinerary.map(d => ({ dayNumber: d.dayNumber, date: d.date, region: deriveRegion(d.theme) }))}
           />
         </div>
 

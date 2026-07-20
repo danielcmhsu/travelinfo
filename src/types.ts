@@ -36,12 +36,15 @@ export interface ItineraryDay {
 
 export interface RestaurantInfo {
   id: string;
+  type?: 'food' | 'shopping'; // 未設定時視為美食，向下相容舊資料
+  day?: number; // 對應行程天數 1–6；未設定=未指定
   name: string;
   cuisine: string;
   priceRange: 'low' | 'medium' | 'high';
   recommendedDishes: string[];
-  address: string;
+  address?: string;
   googleMapsUrl?: string;
+  website?: string;
   imageUrl: string;
   notes: string;
 }

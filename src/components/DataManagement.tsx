@@ -64,7 +64,7 @@ export default function DataManagement({ tripData, onImportData, onResetData }: 
   const handleResetClick = () => {
     if (window.confirm('確定要將網頁行程還原到初始設定嗎？這會清除您目前在瀏覽器中的所有修改。')) {
       onResetData();
-      setSuccessText('✅ 行程已成功重置為預設 Tokyo 秋日行！');
+      setSuccessText('✅ 行程已成功重置為預設東北行程！');
       setTimeout(() => setSuccessText(''), 4000);
     }
   };

@@ -92,6 +92,12 @@ export default function HotelSection({ hotels = [], isEditing, onUpdateHotels }:
   };
 
   // Helper to extract a short location name for the tab labels
+  const todayIso = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
+  const today = todayIso();
+
   const getTabLabel = (h: HotelInfo, idx: number) => {
     const dateStr = h.checkInDate ? h.checkInDate.substring(5) : ''; // e.g. "07-22"
     const displayDate = dateStr ? dateStr.replace('-', '/') : `Night ${idx + 1}`;
@@ -102,8 +108,9 @@ export default function HotelSection({ hotels = [], isEditing, onUpdateHotels }:
     else if (h.name.includes("鳴子")) shortName = "鳴子溫泉";
     else if (h.name.includes("雫石")) shortName = "雫石";
     else if (h.name.includes("十和田")) shortName = "十和田";
+    else if (h.name.includes("弘前")) shortName = "弘前";
     else if (h.name.includes("青森")) shortName = "青森";
-    else if (h.name.includes("溫暖的家") || h.name.includes("Sweet Home") || h.name.includes("家")) shortName = "溫慢家";
+    else if (h.name.includes("溫暖的家") || h.name.includes("Sweet Home") || h.name.includes("家")) shortName = "溫暖家";
     else {
       shortName = h.name.substring(0, 5);
     }
@@ -151,7 +158,7 @@ export default function HotelSection({ hotels = [], isEditing, onUpdateHotels }:
                       : 'text-[#717171] hover:text-[#1A1A1A] hover:bg-black/5'
                   }`}
                 >
-                  <span className="block text-[10px] opacity-75 uppercase tracking-wider">NIGHT {idx + 1}</span>
+                  <span className="block text-[10px] opacity-75 uppercase tracking-wider">{h.checkInDate === today ? 'TONIGHT' : `NIGHT ${idx + 1}`}</span>
                   <span className="block text-xs mt-0.5">{getTabLabel(h, idx)}</span>
                 </button>
                 
@@ -182,10 +189,15 @@ export default function HotelSection({ hotels = [], isEditing, onUpdateHotels }:
           <div className="lg:col-span-5 space-y-5">
             <div className="relative rounded-xl overflow-hidden aspect-video sm:aspect-auto sm:h-56 bg-black/5 border border-black/5 shadow-sm">
               <img
+                key={activeIndex}
                 src={hotel.imageUrl || "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80"}
                 alt={hotel.name}
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80";
+                }}
               />
               {isEditing && (
                 <div className="absolute inset-0 bg-black/60 flex flex-col justify-center p-3">
